@@ -22,9 +22,9 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
 # Install Go tools commonly used in CI/CD
-RUN go install github.com/jstemmer/go-junit-report/v2@latest && \
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
-    go install golang.org/x/tools/cmd/goimports@latest
+RUN go install github.com/jstemmer/go-junit-report/v2@v2.1.0 && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.54.2 && \
+    go install golang.org/x/tools/cmd/goimports@v0.13.0
 
 # Install JUnit and Maven for Java testing
 RUN mkdir -p /opt/junit && \
@@ -44,7 +44,9 @@ ENV PATH=$MAVEN_HOME/bin:$PATH
 
 # Create a non-root user for security
 RUN useradd -m -s /bin/bash jenkins && \
-    usermod -aG sudo jenkins
+    usermod -aG sudo jenkins && \
+    mkdir -p /go/pkg && \
+    chown -R jenkins:jenkins /go
 
 # Set working directory
 WORKDIR /workspace
@@ -54,6 +56,10 @@ RUN chown -R jenkins:jenkins /workspace
 
 # Switch to jenkins user
 USER jenkins
+
+# Set Go environment for jenkins user
+ENV GOCACHE=/home/jenkins/.cache/go-build
+ENV GOMODCACHE=/home/jenkins/go/pkg/mod
 
 # Default command
 CMD ["/bin/bash"]

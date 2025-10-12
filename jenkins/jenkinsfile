@@ -2,18 +2,101 @@ pipeline {
     agent any
 
     stages {
+        stage('Build Docker Agent') {
+            steps {
+                script {
+                    // Build our custom Docker agent
+                    sh '''
+                        cd jenkins
+                        docker build -f golang-junit-agent -t golang-junit-agent:latest .
+                    '''
+                }
+            }
+        }
+        
         stage('Unit Tests - Backend') {
             agent {
                 docker {
-                    image 'jenkins/golang-junit-agent'
+                    image 'golang-junit-agent:latest'
                     reuseNode true 
                 }
             }
             steps {
                 dir('bugtracker-backend') {
-                    sh 'go test ./... -v'
+                    sh '''
+                        echo "Go version:"
+                        go version
+                        echo "Running Go tests..."
+                        go test ./... -v
+                        
+                        echo "Generating test coverage..."
+                        go test ./... -coverprofile=coverage.out
+                        
+                        echo "Generating JUnit report..."
+                        go test -v ./... | go-junit-report -set-exit-code > test-results.xml
+                    '''
                 }
             }
+            post {
+                always {
+                    publishTestResults testResultsPattern: 'bugtracker-backend/test-results.xml'
+                    publishCoverage adapters: [
+                        coberturaAdapter('bugtracker-backend/coverage.out')
+                    ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+                }
+            }
+        }
+        
+        stage('Lint - Backend') {
+            agent {
+                docker {
+                    image 'golang-junit-agent:latest'
+                    reuseNode true 
+                }
+            }
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Running golangci-lint..."
+                        golangci-lint run ./...
+                    '''
+                }
+            }
+        }
+        
+        stage('Build - Backend') {
+            agent {
+                docker {
+                    image 'golang-junit-agent:latest'
+                    reuseNode true 
+                }
+            }
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Building Go application..."
+                        go build -o bin/bugtracker ./cmd/bugtracker
+                        ls -la bin/
+                    '''
+                }
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'bugtracker-backend/bin/*', fingerprint: true
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline succeeded! 🎉'
+        }
+        failure {
+            echo 'Pipeline failed! ❌'
         }
     }
 }

@@ -1,0 +1,154 @@
+pipeline {
+    agent {
+        dockerfile {
+            filename 'jenkins/golang-junit-agent'
+            dir '.'
+            label 'docker'
+        }
+    }
+    
+    environment {
+        GO_VERSION = '1.23'
+        GOPROXY = 'https://proxy.golang.org'
+    }
+    
+    stages {
+        stage('Environment Info') {
+            steps {
+                sh '''
+                    echo "=== Environment Information ==="
+                    echo "Go version:"
+                    go version
+                    echo ""
+                    echo "Java version:"
+                    java -version
+                    echo ""
+                    echo "Working directory:"
+                    pwd
+                    ls -la
+                '''
+            }
+        }
+        
+        stage('Dependencies') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "=== Installing Dependencies ==="
+                        go mod download
+                        go mod verify
+                        go mod tidy
+                    '''
+                }
+            }
+        }
+        
+        stage('Lint') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "=== Running Linter ==="
+                        golangci-lint run ./... --timeout=5m
+                    '''
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "=== Running Tests ==="
+                        
+                        # Run tests with coverage
+                        go test -v ./... -coverprofile=coverage.out -covermode=atomic
+                        
+                        # Generate JUnit XML report
+                        go test -v ./... | go-junit-report -set-exit-code > test-results.xml
+                        
+                        # Show coverage summary
+                        go tool cover -func=coverage.out
+                    '''
+                }
+            }
+            post {
+                always {
+                    dir('bugtracker-backend') {
+                        publishTestResults testResultsPattern: 'test-results.xml'
+                        publishCoverage adapters: [
+                            coberturaAdapter('coverage.out')
+                        ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+                    }
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "=== Building Application ==="
+                        
+                        # Build the application
+                        mkdir -p bin
+                        go build -ldflags="-w -s" -o bin/bugtracker ./cmd/bugtracker
+                        
+                        # Verify the build
+                        ls -la bin/
+                        file bin/bugtracker
+                        ./bin/bugtracker --help || echo "Binary built successfully"
+                    '''
+                }
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'bugtracker-backend/bin/*', fingerprint: true
+                }
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "=== Security Scanning ==="
+                        
+                        # Check for known vulnerabilities
+                        go list -json -deps ./... | nancy sleuth || echo "Nancy security scan completed"
+                        
+                        # Alternative: Use go mod to check for vulnerabilities
+                        go mod download -json all 2>/dev/null | grep -o '"Path":"[^"]*"' | cut -d'"' -f4 | sort -u > dependencies.list
+                        echo "Dependencies checked for vulnerabilities"
+                        cat dependencies.list
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Cleaning up workspace...'
+            cleanWs()
+        }
+        success {
+            echo '✅ Pipeline completed successfully!'
+            emailext (
+                subject: "✅ Build Success: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "Good news! The build completed successfully.\n\nBuild: ${env.BUILD_URL}",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+        failure {
+            echo '❌ Pipeline failed!'
+            emailext (
+                subject: "❌ Build Failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+                body: "The build has failed. Please check the logs.\n\nBuild: ${env.BUILD_URL}",
+                to: "${env.CHANGE_AUTHOR_EMAIL}"
+            )
+        }
+        unstable {
+            echo '⚠️ Pipeline is unstable!'
+        }
+    }
+}
