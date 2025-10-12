@@ -1,0 +1,108 @@
+pipeline {
+    agent {
+        dockerfile {
+            filename 'jenkins/golang-junit-agent'
+            dir '.'
+        }
+    }
+    
+    environment {
+        GO_VERSION = '1.23'
+        GOPROXY = 'https://proxy.golang.org'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        
+        stage('Go Environment') {
+            steps {
+                sh '''
+                    echo "Go version:"
+                    go version
+                    echo "Java version:"
+                    java -version
+                    echo "Maven version:"
+                    mvn -version
+                '''
+            }
+        }
+        
+        stage('Dependencies') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Downloading Go dependencies..."
+                        go mod download
+                        go mod verify
+                    '''
+                }
+            }
+        }
+        
+        stage('Lint') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Running golangci-lint..."
+                        golangci-lint run ./...
+                    '''
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Running Go tests..."
+                        go test -v ./... -coverprofile=coverage.out
+                        
+                        echo "Generating JUnit report..."
+                        go test -v ./... | go-junit-report -set-exit-code > test-results.xml
+                    '''
+                }
+            }
+            post {
+                always {
+                    publishTestResults testResultsPattern: 'bugtracker-backend/test-results.xml'
+                    publishCoverage adapters: [
+                        coberturaAdapter('bugtracker-backend/coverage.out')
+                    ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                dir('bugtracker-backend') {
+                    sh '''
+                        echo "Building Go application..."
+                        go build -o bin/bugtracker ./cmd/bugtracker
+                    '''
+                }
+            }
+        }
+        
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: 'bugtracker-backend/bin/*', fingerprint: true
+            }
+        }
+    }
+    
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}

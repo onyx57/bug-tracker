@@ -1,0 +1,59 @@
+# Use official Go image as base
+FROM golang:1.23-bullseye
+
+# Set labels for better container management
+LABEL maintainer="bug-tracker-team"
+LABEL description="Docker agent with Go and JUnit for CI/CD pipeline"
+LABEL version="1.0"
+
+# Install essential tools and Java (for JUnit)
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jdk \
+    wget \
+    unzip \
+    curl \
+    git \
+    make \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set JAVA_HOME and update PATH
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Install Go tools commonly used in CI/CD
+RUN go install github.com/jstemmer/go-junit-report/v2@latest && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
+    go install golang.org/x/tools/cmd/goimports@latest
+
+# Install JUnit and Maven for Java testing
+RUN mkdir -p /opt/junit && \
+    wget -O /opt/junit/junit-platform-console-standalone.jar \
+    https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.10.2/junit-platform-console-standalone-1.10.2.jar
+
+# Install Maven for Java dependency management
+RUN wget -O /tmp/maven.tar.gz \
+    https://archive.apache.org/dist/maven/maven-3/3.9.5/binaries/apache-maven-3.9.5-bin.tar.gz && \
+    tar -xzf /tmp/maven.tar.gz -C /opt && \
+    ln -s /opt/apache-maven-3.9.5 /opt/maven && \
+    rm /tmp/maven.tar.gz
+
+# Set Maven environment
+ENV MAVEN_HOME=/opt/maven
+ENV PATH=$MAVEN_HOME/bin:$PATH
+
+# Create a non-root user for security
+RUN useradd -m -s /bin/bash jenkins && \
+    usermod -aG sudo jenkins
+
+# Set working directory
+WORKDIR /workspace
+
+# Change ownership of workspace to jenkins user
+RUN chown -R jenkins:jenkins /workspace
+
+# Switch to jenkins user
+USER jenkins
+
+# Default command
+CMD ["/bin/bash"]
