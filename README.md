@@ -1,155 +1,73 @@
-# Bug Tracker Pro
+# Bug Tracker — CI/CD Fork
 
-<p align="center">
-  <img src="bugtracker-frontend/public/bugTracker_Logo.png" alt="Bug Tracker Logo" width="300" height="300"/>
-</p>
+Forked from [james-willett/bug-tracker](https://github.com/james-willett/bug-tracker)
+(a full-stack bug tracker: Go backend, Next.js frontend, Playwright tests).
 
-A full-stack bug tracking application built with Go (backend) and Next.js (frontend). The application allows users to create, read, update, and delete bug reports, with support for comments and priority levels.
+## What I added on top of upstream
 
-## Features
+This fork is my playground for the CI/CD side of testing — the part most
+QA portfolios skip. On top of the upstream app, I built:
 
-- Create and manage bug reports
-- Add comments to bugs
-- Set priority levels and status
-- Real-time updates
-- Responsive design
-- Comprehensive test coverage (unit, API, E2E, and performance tests)
+- **Jenkins pipeline with a Dockerized Go-aware build agent** — full local
+  Jenkins via `docker compose up` in `jenkins/`. Custom agent image with
+  pinned Go tooling (go-junit-report, golangci-lint, goimports), JUnit
+  report generation, and proper permission handling. See
+  [`jenkins/FIX_SUMMARY.md`](jenkins/FIX_SUMMARY.md) for the gnarly
+  permission/version issues I worked through.
+- **Additional unit tests** in the frontend components and Go backend.
+- **Docker fixes** to get the multi-service stack building cleanly.
+- **GitHub Actions starter** (`.github/workflows/ci.yml`) — currently a
+  scaffold I'll extend; Jenkins is doing the real work.
 
-## Prerequisites
+If you're looking at this for context on my QA work, the interesting
+folders are `jenkins/`, `bugtracker-frontend/src/components/*.test.tsx`,
+and `bugtracker-backend/internal/`.
 
-Before running the application, ensure you have the following installed:
+## Running it locally
 
-- [Node.js](https://nodejs.org/) (v20 or later)
-- [Go](https://go.dev/) (v1.21 or later)
-- [Docker and Docker Compose](https://docs.docker.com/)
-- [Git](https://git-scm.com/)
-
-## Quick Start with Docker Compose
-
-The easiest way to run the application is using Docker Compose:
+The fastest path:
 
 ```bash
-# Clone the repository
-git clone https://github.com/james-willett/bug-tracker.git
-cd bug-tracker
-
-# Launch the application
 docker compose up --build
 ```
 
-The application will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8080
 
-## Manual Setup
+For granular setup (running each service or test type on its own), see the
+[upstream README](https://github.com/james-willett/bug-tracker#readme) — it's
+still accurate.
 
-### Backend
-
-```bash
-cd bugtracker-backend
-
-# Install dependencies
-go mod download
-
-# Run the application
-go run cmd/bugtracker/main.go
-```
-
-The backend API will be available at http://localhost:8080
-
-### Frontend
+## Running the test suites
 
 ```bash
-cd bugtracker-frontend
+# Backend unit tests
+cd bugtracker-backend && go test ./... -v
 
-# Install dependencies
-npm install
+# Frontend unit tests
+cd bugtracker-frontend && npm test
 
-# Run the development server
-npm run dev
+# API tests
+cd tests-api && npm install && npm run test:local
+
+# E2E tests (Playwright)
+cd tests-e2e && npm install && npx playwright test
+
+# Performance tests (K6)
+cd tests-perf && k6 run script.js
 ```
 
-The frontend will be available at http://localhost:3000
-
-## Running Tests
-
-The project includes several types of tests:
-
-### Backend Unit Tests
-```bash
-cd bugtracker-backend
-go test ./... -v
-```
-
-### Frontend Unit Tests
-```bash
-cd bugtracker-frontend
-npm test
-```
-
-### API Tests
-```bash
-cd tests-api
-npm install
-npm run test:local
-```
-
-### E2E Tests
-```bash
-cd tests-e2e
-npm install
-npx playwright test
-```
-
-### Performance Tests
-First, install K6:
-```bash
-# MacOS
-brew install k6
-
-# Windows
-winget install k6
-
-# Linux
-For Linux installation instructions, please refer to the [official K6 installation guide](https://k6.io/docs/getting-started/installation#linux)
-```
-
-Then run the tests:
-```bash
-cd tests-perf
-k6 run script.js
-```
-
-## Project Structure
-
-- `bugtracker-backend/` - Go backend application
-- `bugtracker-frontend/` - Next.js frontend application
-- `tests-api/` - API tests using Playwright
-- `tests-e2e/` - End-to-end tests using Playwright
-- `tests-perf/` - Performance tests using K6
-- `jenkins/` - Contains Jenkins pipeline configurations
-
-## Jenkins CI/CD
-
-The project includes Jenkins pipelines located in the `jenkins/` folder for continuous integration and deployment.
-
-To start Jenkins locally using Docker Compose:
+## Local Jenkins
 
 ```bash
 cd jenkins
-docker-compose up --build
+docker compose up --build
 ```
 
-Jenkins will then be available at [http://localhost:9000](http://localhost:9000).
+Jenkins UI at http://localhost:9000.
 
-## Contributing
+## Credits
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details 
+All of the application code (Go backend, Next.js frontend, base test suites)
+is by [James Willett](https://github.com/james-willett). I forked it to layer
+a CI/CD setup on top as a portfolio piece.
